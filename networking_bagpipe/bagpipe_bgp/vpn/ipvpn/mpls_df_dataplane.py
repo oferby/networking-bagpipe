@@ -18,11 +18,15 @@ class DfVPNInstanceDataplane(dp_drivers.VPNInstanceDataplane):
         dp_drivers.VPNInstanceDataplane.__init__(self, *args)
         self.api_nb = api_nb.NbApi.get_instance(True)
         self.bridge = 'br-int'
+        self.helper_port = None
 
     @log_decorator.log
     def vif_plugged(self, mac_address, ip_address_prefix, localport, label):
+        port = localport['linuxif']
+        if not self.helper_port:
+            self.helper_port = port
         local_route = remote_routes.LocalLabeledRoute(id=mac_address, dest_ip=ip_address_prefix,
-                                                      port=localport['linuxif'],
+                                                      port=port,
                                                       label=label)
         self.api_nb.create(local_route)
 
@@ -42,7 +46,8 @@ class DfVPNInstanceDataplane(dp_drivers.VPNInstanceDataplane):
                                             lb_consistent_hash_order=0):
         LOG.debug('adding remote route %s %s %s' % (prefix, remote_pe, label))
         route_id = remote_pe + ':' + str(label)
-        remote_route = remote_routes.RemoteLabeledRoute(id=route_id, destination=prefix, label=label, nexthop=remote_pe)
+        remote_route = remote_routes.RemoteLabeledRoute(id=route_id, destination=prefix, label=label, nexthop=remote_pe,
+                                                        helper_port=self.helper_port)
         self.api_nb.create(remote_route)
 
     @log_decorator.log
