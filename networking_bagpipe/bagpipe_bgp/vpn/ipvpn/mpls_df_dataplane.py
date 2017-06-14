@@ -16,8 +16,7 @@ class DfVPNInstanceDataplane(dp_drivers.VPNInstanceDataplane):
     @log_decorator.log
     def __init__(self, *args, **kwargs):
         dp_drivers.VPNInstanceDataplane.__init__(self, *args)
-        # self.db_store2 = db_store2.get_instance()
-        self.api_nb = api_nb.NbApi.get_instance(False)
+        self.api_nb = api_nb.NbApi.get_instance(True)
         self.bridge = 'br-int'
 
     @log_decorator.log
