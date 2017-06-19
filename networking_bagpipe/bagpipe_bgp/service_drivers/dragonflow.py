@@ -103,41 +103,25 @@ class DragonflowBGPVPNDriver(driver_api.BGPVPNDriver):
 
     @log_helpers.log_method_call
     def create_router_assoc_postcommit(self, context, router_assoc):
-        bgpvpn = self.get_bgpvpn(context, router_assoc['bgpvpn_id'])
-        if bgpvpn['type'] != 'l3':
-            raise DragonflowBGPException(reason='VPN type not supported')
-
-        ports_for_vpn = self.get_ports_for_vpn(context, router_assoc,
-                                               bgpvpn['name'] if 'name' in bgpvpn else bgpvpn['id'])
-
+        ports_for_vpn = self.get_ports_for_vpn(context, router_assoc)
         for port in ports_for_vpn:
-
-            json_data = {
-                "import_rt": bgpvpn['route_targets'],
-                "export_rt": bgpvpn['route_targets'],
-                "local_port": port['id'],
-                "vpn_instance_id": bgpvpn['id'],
-                "vpn_type": const.IPVPN,
-                "gateway_ip": port['gateway_ip'],
-                "mac_address": port['mac_address'],
-                "ip_address": port['ip_address'],
-                # "advertise_subnet": options.advertise_subnet,
-                # "readvertise": readvertise,
-                # "attract_traffic": attract_traffic,
-                # "lb_consistent_hash_order": options.lb_consistent_hash_order,
-                # "vni": options.vni
-            }
-
             try:
-                self.post('attach_localport', json_data)
+                self.post('attach_localport', port)
                 LOG.debug("Local port has been attached to bagpipe-bgp with "
-                          "details %s" % json_data)
+                          "details %s" % port)
             except DragonflowBGPException as e:
                 LOG.error("Can't attach local port on bagpipe-bgp: %s", str(e))
 
     @log_helpers.log_method_call
     def delete_router_assoc_postcommit(self, context, router_assoc):
-        pass
+        ports_for_vpn = self.get_ports_for_vpn(context, router_assoc)
+        for port in ports_for_vpn:
+            try:
+                self.post('detach_localport', port)
+                LOG.debug("Local port has been detached from bagpipe-bgp with "
+                          "details %s" % port)
+            except DragonflowBGPException as e:
+                LOG.error("Can't detach local port on bagpipe-bgp: %s", str(e))
 
     def _send_port_attach(self):
         pass
@@ -169,7 +153,10 @@ class DragonflowBGPVPNDriver(driver_api.BGPVPNDriver):
         self.agent_rpc.update_bgpvpn(context,
                                      formated_bgpvpn)
 
-    def get_ports_for_vpn(self, context, router_assoc, vpn):
+    def get_ports_for_vpn(self, context, router_assoc):
+        bgpvpn = self.get_bgpvpn(context, router_assoc['bgpvpn_id'])
+        if bgpvpn['type'] != 'l3':
+            raise DragonflowBGPException(reason='VPN type not supported')
         ports = get_router_ports(context, router_assoc['router_id'])
         net_port_infos = []
         if ports:
@@ -178,21 +165,27 @@ class DragonflowBGPVPNDriver(driver_api.BGPVPNDriver):
                 net_ports = get_network_ports(context, net_id)
                 for net_port in net_ports:
                     net_info = get_network_info_for_port(context, net_port.id)
-                    LOG.debug('adding port: %s to vpn: %s', net_info, vpn)
-                    net_port_infos.append(net_info)
+                    LOG.debug('adding port: %s to vpn: %s', net_info, router_assoc['bgpvpn_id'])
+                    port_dict = {
+                        "import_rt": bgpvpn['route_targets'],
+                        "export_rt": bgpvpn['route_targets'],
+                        "local_port": net_info['id'],
+                        "vpn_instance_id": bgpvpn['id'],
+                        "vpn_type": const.IPVPN,
+                        "gateway_ip": net_info['gateway_ip'],
+                        "mac_address": net_info['mac_address'],
+                        "ip_address": net_info['ip_address'],
+                        # "advertise_subnet": options.advertise_subnet,
+                        # "readvertise": readvertise,
+                        # "attract_traffic": attract_traffic,
+                        # "lb_consistent_hash_order": options.lb_consistent_hash_order,
+                        # "vni": options.vni
+                    }
+                    net_port_infos.append(port_dict)
         return net_port_infos
-
-    def get(self, action):
-        return self._do_request("GET", action)
 
     def post(self, action, body=None):
         return self._do_request("POST", action, body=body)
-
-    def put(self, action, body=None):
-        return self._do_request("PUT", action, body=body)
-
-    def delete(self, action):
-        return self._do_request("DELETE", action)
 
     def _do_request(self, method, action, body=None):
         LOG.debug("bagpipe-bgp client request: %s %s [%s]" %
